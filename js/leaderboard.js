@@ -365,7 +365,7 @@ class LeaderboardScreen {
                 <div style="background: linear-gradient(135deg, #1a0b2e 0%, #2d1b3d 100%); border: 1px solid #7c3aed; border-radius: 15px; padding: 30px; max-width: 400px; width: 90%; box-shadow: 0 0 30px rgba(124, 58, 237, 0.5);">
                     <div style="text-align: center; margin-bottom: 20px;">
                         <div style="font-size: 60px; margin-bottom: 15px;">
-                            ${avatarUrl ? `<img src="${avatarUrl}" alt="${username}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #7c3aed;">` : '<span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 36px; margin: 0 auto;">' + username.charAt(0).toUpperCase() + '</span>'}
+                            ${avatarUrl ? `<img src="${avatarUrl}" alt="${username}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #7c3aed; cursor: pointer; transition: transform 0.3s ease, box-shadow 0.3s ease; box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);" onmouseover="this.style.transform='scale(1.15)'; this.style.boxShadow='0 0 20px rgba(124, 58, 237, 0.8)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 0 10px rgba(124, 58, 237, 0.5)';" onclick="expandUserPhoto('${avatarUrl.replace(/'/g, "\\'")}')" title="Клик для увеличения">` : '<span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 36px; margin: 0 auto;">' + username.charAt(0).toUpperCase() + '</span>'}
                         </div>
                         <h2 style="color: #c4b5fd; margin: 15px 0; word-break: break-word;">${username}</h2>
                     </div>
@@ -444,3 +444,34 @@ const screens = document.querySelectorAll('.screen');
 screens.forEach(screen => {
     observer.observe(screen, { attributes: true, attributeFilter: ['class'] });
 });
+
+// Функция для увеличения фотографии пользователя
+window.expandUserPhoto = function(photoUrl) {
+    const expandedModal = document.createElement('div');
+    expandedModal.id = 'expanded-photo-modal';
+    expandedModal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.95);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10001;
+    `;
+    
+    expandedModal.innerHTML = `
+        <div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+            <img src="${photoUrl}" alt="Увеличенная фотография" style="max-width: 90vw; max-height: 90vh; border-radius: 15px; object-fit: contain;">
+            <button onclick="document.getElementById('expanded-photo-modal').remove()" style="position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); width: 60px; height: 60px; background: linear-gradient(135deg, #7c3aed, #8b5cf6); color: white; border: none; border-radius: 50%; cursor: pointer; font-size: 28px; transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4);">
+                ✕
+            </button>
+            <div onclick="document.getElementById('expanded-photo-modal').remove()" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; cursor: pointer;"></div>
+        </div>
+    `;
+    
+    document.body.appendChild(expandedModal);
+};
+

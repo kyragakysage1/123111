@@ -205,23 +205,50 @@
                 <p style="color: #c4b5fd; margin: 30px 0;">Как вы хотите играть?</p>
                 
                 <div style="display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; margin: 50px 0;">
-                    <div class="mode-card" onclick="showMultiplayerScreen()" style="cursor: pointer;">
+                    <div class="mode-card" onclick="showMultiplayerSettingsScreen()" style="cursor: pointer;">
                         <div class="mode-icon">🎲</div>
                         <h3>Разные</h3>
                         <p>Каждый игрок получает разные вопросы. Сравните результаты!</p>
                         <div class="mode-difficulty">Разные вопросы</div>
                     </div>
 
-                    <div class="mode-card" onclick="showMultiplayerNormalStub()" style="cursor: pointer;">
+                    <div class="mode-card" onclick="showMultiplayerNormalSettings()" style="cursor: pointer;">
                         <div class="mode-icon">🔒</div>
                         <h3>Обычный</h3>
-                        <p>Вскоре будет доступен. Оба игрока отвечают на одни и те же вопросы.</p>
-                        <div class="mode-difficulty">Скоро...</div>
+                        <p>Оба игрока отвечают на одни и те же вопросы. Сравните результаты!</p>
+                        <div class="mode-difficulty">Одинаковые вопросы</div>
                     </div>
                 </div>
                 
                 <button class="btn secondary-btn" onclick="showScreen('game-mode-selection-screen')" style="margin-top: 20px;">
                     Назад
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Экран настройки мультиплеера (выбор количества вопросов) -->
+    <div id="multiplayer-settings-screen" class="screen">
+        <div class="container">
+            <h2>⚙️ Настройка игры</h2>
+            <p style="color: #a78bfa; margin-bottom: 30px;">Разные - каждый получает разные вопросы</p>
+            
+            <div style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); 
+                        border: 1px solid #667eea; border-radius: 10px; padding: 20px; margin-bottom: 30px; max-width: 400px; margin-left: auto; margin-right: auto;">
+                <div class="form-group">
+                    <label for="multiplayer-questions-settings" style="color: #a78bfa; display: block; margin-bottom: 10px;">📊 Количество вопросов:</label>
+                    <input type="number" id="multiplayer-questions-settings" min="5" max="50" value="10" 
+                           style="width: 100%; padding: 12px; background: rgba(102, 126, 234, 0.1); border: 1px solid #667eea; border-radius: 5px; color: #c4b5fd; font-size: 16px;">
+                    <p style="color: #9a8bce; font-size: 12px; margin-top: 8px;">Минимум 5, максимум 50 вопросов</p>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+                <button class="btn start-btn" onclick="proceedToMultiplayerFriends()" style="padding: 12px 30px; font-size: 16px;">
+                    ✓ Далее
+                </button>
+                <button class="btn secondary-btn" onclick="showScreen('multiplayer-type-screen')" style="padding: 12px 30px; font-size: 16px;">
+                    ← Назад
                 </button>
             </div>
         </div>
@@ -618,30 +645,31 @@
     </div>
 
     <!-- Подключаем все JavaScript файлы -->
-    <script src="js/animeDatabase.js"></script>
+    <script src="js/animeDatabase.js?v=3"></script>
     
     <!-- Аутентификация -->
-    <script src="js/auth/authManager.js"></script>
-    <script src="js/auth/uiComponents.js"></script>
-    <script src="js/auth/loginScreen.js"></script>
-    <script src="js/auth/registerScreen.js"></script>
-    <script src="js/auth/profileScreen.js"></script>
-    <script src="js/auth/friendsManager.js"></script>
-    <script src="js/leaderboard.js"></script>
+    <script src="js/auth/authManager.js?v=3"></script>
+    <script src="js/auth/uiComponents.js?v=3"></script>
+    <script src="js/auth/loginScreen.js?v=3"></script>
+    <script src="js/auth/registerScreen.js?v=3"></script>
+    <script src="js/auth/profileScreen.js?v=3"></script>
+    <script src="js/auth/friendsManager.js?v=6"></script>
+    <script src="js/leaderboard.js?v=3"></script>
     
     <!-- Утилиты -->
-    <script src="js/utils/audioManager.js"></script>
-    <script src="js/utils/uiManager.js"></script>
+    <script src="js/utils/audioManager.js?v=3"></script>
+    <script src="js/utils/uiManager.js?v=3"></script>
     
     <!-- Режимы игры -->
-    <script src="js/gameModes/infiniteMode.js"></script>
-    <script src="js/gameModes/livesMode.js"></script>
-    <script src="js/gameModes/timedMode.js"></script>
-    <script src="js/gameModes/marathonMode.js"></script>
-    <script src="js/gameModes/multiplayerMode.js"></script>
+    <script src="js/gameModes/infiniteMode.js?v=3"></script>
+    <script src="js/gameModes/livesMode.js?v=3"></script>
+    <script src="js/gameModes/timedMode.js?v=3"></script>
+    <script src="js/gameModes/marathonMode.js?v=3"></script>
+    <script src="js/gameModes/multiplayerMode.js?v=5"></script>
+    <script src="js/gameModes/multiplayerNormalMode.js?v=20"></script>
     
     <!-- Основной скрипт -->
-    <script src="js/script.js"></script>
+    <script src="js/script.js?v=6"></script>
     
     <script>
         // Функция для обновления статуса загрузки
@@ -681,15 +709,6 @@
         <div class="container">
             <h2>Мультиплеер</h2>
             <p style="color: #a78bfa; margin-bottom: 30px;">Выбери друга для игры</p>
-            
-            <div style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); 
-                        border: 1px solid #667eea; border-radius: 10px; padding: 20px; margin-bottom: 20px;">
-                <p style="color: #c4b5fd; margin-bottom: 15px;">⚙️ Настройка игры</p>
-                <div class="form-group">
-                    <label for="multiplayer-questions" style="color: #a78bfa;">Количество вопросов:</label>
-                    <input type="number" id="multiplayer-questions" min="5" max="50" value="10" style="width: 100%; padding: 8px; margin-top: 5px; background: rgba(102, 126, 234, 0.1); border: 1px solid #667eea; border-radius: 5px; color: #c4b5fd;">
-                </div>
-            </div>
 
             <h3 style="margin-top: 30px; color: #c4b5fd;">👥 Ваши друзья</h3>
             <div id="multiplayer-friends-list" style="margin-top: 15px; min-height: 100px;">

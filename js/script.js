@@ -1289,14 +1289,8 @@ function updateGameVolume(volume) {
         }
     }
     
-    // Сохраняем настройки
-    if (window.authManager && window.authManager.isLoggedIn()) {
-        // Сохраняем в профиль
-        window.authManager.updateUserSettings(settings);
-    } else {
-        // Сохраняем локально
-        localStorage.setItem('animeQuizSettings', JSON.stringify(settings));
-    }
+    // Сохраняем настройки локально
+    localStorage.setItem('animeQuizSettings', JSON.stringify(settings));
     
     console.log('✅ Громкость обновлена:', newVolume + '%');
 }
@@ -1412,6 +1406,30 @@ function startMusicForQuestion() {
 
 // ========== МУЛЬТИПЛЕЕР ФУНКЦИИ ==========
 
+// Показать экран настроек мультиплеера
+function showMultiplayerSettingsScreen() {
+    console.log('⚙️ Показ экрана настроек мультиплеера');
+    showScreen('multiplayer-settings-screen');
+}
+
+// Перейти к выбору друзей после выбора количества вопросов
+function proceedToMultiplayerFriends() {
+    console.log('👥 Переход к выбору друзей');
+    
+    // Получаем значение из поля настроек
+    const settingsInput = document.getElementById('multiplayer-questions-settings');
+    const questionsCount = settingsInput ? parseInt(settingsInput.value) || 10 : 10;
+    
+    console.log('📊 Выбрано вопросов:', questionsCount);
+    
+    // Сохраняем это значение глобально для использования при приглашении
+    window.selectedMultiplayerQuestions = questionsCount;
+    window.currentMultiplayerMode = 'different'; // Устанавливаем текущий режим
+    
+    // Показываем экран мультиплеера со списком друзей
+    showMultiplayerScreen();
+}
+
 async function showMultiplayerScreen() {
     console.log('🎮 Открытие экрана мультиплеера');
     
@@ -1431,11 +1449,13 @@ async function showMultiplayerScreen() {
                 <p style="font-size: 12px; margin-top: 10px;">Добавьте друзей через профиль чтобы играть в мультиплеер</p>
             </div>
         `;
+        showScreen('multiplayer-screen');
         return;
     }
 
-    // Показываем друзей с кнопками приглашения
-    const maxQuestions = parseInt(document.getElementById('multiplayer-questions')?.value || 10);
+    // Используем сохраненное значение или значение по умолчанию
+    const maxQuestions = window.selectedMultiplayerQuestions || 10;
+    console.log('📊 Количество вопросов для приглашения:', maxQuestions);
 
     const friendsHtml = friends.map(friend => {
         return `
@@ -1489,10 +1509,166 @@ async function inviteFriendToMultiplayer(friendId, maxQuestions = 10) {
     }
 }
 
-// Заглушка для "Обычного" режима мультиплеера
-function showMultiplayerNormalStub() {
-    alert('🔒 Режим "Обычный" будет доступен скоро!\n\nВ этом режиме оба игрока будут отвечать на одни и те же вопросы.');
-    showScreen('multiplayer-type-screen');
+// Показать экран настроек для обычного режима мультиплеера
+function showMultiplayerNormalSettings() {
+    console.log('⚙️ Показ экрана настроек обычного мультиплеера');
+    
+    // Создаём специальный экран для обычного режима
+    const settingsScreen = document.createElement('div');
+    settingsScreen.id = 'multiplayer-normal-settings-screen';
+    settingsScreen.className = 'screen';
+    
+    settingsScreen.innerHTML = `
+        <div class="container">
+            <h2>⚙️ Настройка игры (Обычный режим)</h2>
+            <p style="color: #a78bfa; margin-bottom: 30px;">Оба игрока отвечают на одни и те же вопросы</p>
+            
+            <div style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); 
+                        border: 1px solid #667eea; border-radius: 10px; padding: 20px; margin-bottom: 30px; max-width: 400px; margin-left: auto; margin-right: auto;">
+                <div class="form-group">
+                    <label for="multiplayer-normal-questions-settings" style="color: #a78bfa; display: block; margin-bottom: 10px;">📊 Количество вопросов:</label>
+                    <input type="number" id="multiplayer-normal-questions-settings" min="5" max="50" value="10" 
+                           style="width: 100%; padding: 12px; background: rgba(102, 126, 234, 0.1); border: 1px solid #667eea; border-radius: 5px; color: #c4b5fd; font-size: 16px;">
+                    <p style="color: #9a8bce; font-size: 12px; margin-top: 8px;">Минимум 5, максимум 50 вопросов</p>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+                <button class="btn start-btn" onclick="proceedToMultiplayerNormalFriends()" style="padding: 12px 30px; font-size: 16px;">
+                    ✓ Далее
+                </button>
+                <button class="btn secondary-btn" onclick="showScreen('multiplayer-type-screen')" style="padding: 12px 30px; font-size: 16px;">
+                    ← Назад
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(settingsScreen);
+    showScreen('multiplayer-normal-settings-screen');
+}
+
+// Перейти к выбору друзей для обычного режима
+function proceedToMultiplayerNormalFriends() {
+    console.log('👥 Переход к выбору друзей (Обычный режим)');
+    
+    const settingsInput = document.getElementById('multiplayer-normal-questions-settings');
+    const questionsCount = settingsInput ? parseInt(settingsInput.value) || 10 : 10;
+    
+    console.log('📊 Выбрано вопросов:', questionsCount);
+    
+    window.selectedMultiplayerNormalQuestions = questionsCount;
+    window.currentMultiplayerMode = 'normal'; // Устанавливаем текущий режим
+    
+    showMultiplayerNormalScreen();
+}
+
+// Показать экран выбора друзей для обычного режима
+async function showMultiplayerNormalScreen() {
+    console.log('🎮 Открытие экрана мультиплеера (Обычный режим)');
+    
+    if (!window.friendsManager) {
+        alert('❌ Ошибка: менеджер друзей не инициализирован');
+        return;
+    }
+    
+    const friendsList = document.getElementById('multiplayer-friends-list');
+    if (!friendsList) {
+        console.error('❌ Контейнер списка друзей не найден');
+        return;
+    }
+
+    friendsList.innerHTML = '<p style="text-align: center; color: #a78bfa;">Загрузка списка друзей...</p>';
+
+    const friends = window.friendsManager ? window.friendsManager.getAllFriends() : [];
+
+    if (friends.length === 0) {
+        friendsList.innerHTML = `
+            <div style="text-align: center; padding: 30px; color: #a78bfa;">
+                <p>😢 У вас нет друзей</p>
+                <p style="font-size: 12px; margin-top: 10px;">Добавьте друзей через профиль чтобы играть в мультиплеер</p>
+            </div>
+        `;
+        showScreen('multiplayer-screen');
+        return;
+    }
+
+    const maxQuestions = window.selectedMultiplayerNormalQuestions || 10;
+    console.log('📊 Количество вопросов для приглашения:', maxQuestions);
+
+    const friendsHtml = friends.map(friend => {
+        return `
+            <div style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); 
+                        border: 1px solid #667eea; border-radius: 10px; padding: 15px; margin-bottom: 10px; 
+                        display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                        <div style="width: 10px; height: 10px; border-radius: 50%; background: ${friend.status === 'online' ? '#22c55e' : '#6b7280'};"></div>
+                        <strong style="color: #c4b5fd;">${friend.username}</strong>
+                    </div>
+                    <p style="color: #a78bfa; font-size: 12px; margin: 0;">Уровень: ${friend.level || 1}</p>
+                </div>
+                <button class="btn start-btn" style="padding: 8px 16px; font-size: 13px;" 
+                        onclick="inviteFriendToMultiplayerNormal('${friend.id}', ${maxQuestions})">
+                    📨 Пригласить
+                </button>
+            </div>
+        `;
+    }).join('');
+
+    friendsList.innerHTML = friendsHtml;
+    showScreen('multiplayer-screen');
+}
+
+// Пригласить друга в обычный режим мультиплеера
+async function inviteFriendToMultiplayerNormal(friendId, maxQuestions = 10) {
+    console.log('📨 Приглашение друга (Обычный режим):', friendId, 'Вопросов:', maxQuestions);
+    
+    if (!window.friendsManager) {
+        alert('❌ Ошибка: менеджер друзей не инициализирован');
+        return;
+    }
+
+    // Убедимся что режим установлен
+    window.currentMultiplayerMode = 'normal';
+    console.log('📌 Текущий режим мультиплеера установлен:', window.currentMultiplayerMode);
+
+    // Ждем загрузки класса MultiplayerNormalMode с retry
+    let attempts = 0;
+    while (typeof MultiplayerNormalMode === 'undefined' && attempts < 10) {
+        console.log('⏳ Ожидание загрузки MultiplayerNormalMode... попытка', attempts + 1);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+    }
+
+    if (typeof MultiplayerNormalMode === 'undefined') {
+        console.error('❌ Класс MultiplayerNormalMode не определен после 10 попыток!');
+        alert('❌ Ошибка: игровой режим не загружен. Пожалуйста, обновите страницу (Ctrl+Shift+R).');
+        return;
+    }
+
+    console.log('✅ MultiplayerNormalMode загружен и готов к использованию');
+
+    try {
+        // Устанавливаем режим для гостя перед отправкой приглашения
+        localStorage.setItem('invitedGameMode', 'normal');
+        console.log('💾 Установлен флаг для гостя в localStorage: invitedGameMode = normal');
+        
+        const inviteData = await window.friendsManager.sendMultiplayerInvite(friendId, maxQuestions);
+        
+        if (inviteData && inviteData.id) {
+            console.log('✅ Приглашение успешно отправлено, ID:', inviteData.id);
+            const multiplayerMode = new MultiplayerNormalMode();
+            window.currentGameMode = multiplayerMode;
+            
+            window.currentMultiplayerInviteId = inviteData.id;
+            
+            await multiplayerMode.startAsHost(friendId, maxQuestions);
+        }
+    } catch (error) {
+        console.error('❌ Ошибка при приглашении:', error);
+        alert('Ошибка: ' + error.message);
+    }
 }
 
 // Глобальные функции для доступа из HTML
@@ -1504,7 +1680,6 @@ window.startGame = startGame;
 window.skipQuestion = skipQuestion;
 window.nextQuestion = nextQuestion;
 window.endGame = endGame;
-window.showMultiplayerNormalStub = showMultiplayerNormalStub;
 window.saveSettings = saveSettings;
 window.resetProgress = resetProgress;
 window.searchAnime = searchAnime;
@@ -1528,11 +1703,30 @@ window.loadUserData = loadUserData;
 window.updateMainScreenStats = updateMainScreenStats;
 window.setupHeaderButtons = setupHeaderButtons;
 window.showMultiplayerScreen = showMultiplayerScreen;
+window.showMultiplayerSettingsScreen = showMultiplayerSettingsScreen;
+window.proceedToMultiplayerFriends = proceedToMultiplayerFriends;
+window.showMultiplayerNormalSettings = showMultiplayerNormalSettings;
+window.proceedToMultiplayerNormalFriends = proceedToMultiplayerNormalFriends;
+window.showMultiplayerNormalScreen = showMultiplayerNormalScreen;
 window.inviteFriendToMultiplayer = inviteFriendToMultiplayer;
+window.inviteFriendToMultiplayerNormal = inviteFriendToMultiplayerNormal;
 window.markPlayerReady = function() {
-    if (window.currentGameMode && typeof window.currentGameMode.markPlayerReady === 'function') {
-        window.currentGameMode.markPlayerReady();
+    console.log('🔵 markPlayerReady вызвана');
+    console.log('window.currentGameMode:', window.currentGameMode);
+    
+    if (!window.currentGameMode) {
+        console.error('❌ window.currentGameMode не инициализирован!');
+        return;
     }
+    
+    if (typeof window.currentGameMode.markPlayerReady !== 'function') {
+        console.error('❌ markPlayerReady не является функцией в currentGameMode');
+        console.error('Доступные методы:', Object.keys(window.currentGameMode));
+        return;
+    }
+    
+    window.currentGameMode.markPlayerReady();
+    console.log('✅ markPlayerReady выполнена');
 };
 
 // Функция для получения статуса подключения к Supabase

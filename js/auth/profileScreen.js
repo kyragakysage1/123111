@@ -108,7 +108,7 @@ class ProfileScreen {
     showUserProfile(user) {
         if (!this.profileContainer) return;
 
-        const avatarImage = user.avatar_url ? `<img src="${user.avatar_url}" alt="Аватар" class="user-avatar-image">` : 
+        const avatarImage = user.avatar_url ? `<img src="${user.avatar_url}" alt="Аватар" class="user-avatar-image" style="cursor: pointer; transition: transform 0.3s ease, box-shadow 0.3s ease;" onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 0 20px rgba(124, 58, 237, 0.8)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';" onclick="expandUserPhoto('${user.avatar_url.replace(/'/g, "\\'")}')" title="Клик для увеличения">` : 
                            `<div class="user-avatar-large">${user.username.charAt(0).toUpperCase()}</div>`;
 
         this.profileContainer.innerHTML = `

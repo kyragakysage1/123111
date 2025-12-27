@@ -1,12 +1,16 @@
-class MultiplayerMode {
+class MultiplayerNormalMode {
     constructor() {
-        this.name = 'multiplayer';
-        this.displayName = '👥 Мультиплеер';
+        this.name = 'multiplayer_normal';
+        this.displayName = '👥 Мультиплеер (Обычный)';
         this.isHost = false;
         this.maxQuestions = 10;
         this.hostReady = false;
         this.guestReady = false;
-        this.gameEnded = false; // Флаг чтобы не вызывать завершение дважды
+        this.gameEnded = false; // Флаг чтобы не вызвать завершение дважды
+        this.sharedQuestions = []; // Полные данные вопросов (correctId, wrongIds, order) для обоих игроков
+        this.guestQuestionsLoaded = false; // Флаг что гость загрузил вопросы
+        this.gameStarted = false; // Флаг что игра уже запущена
+        this.questionsLoadedFromDB = false; // Флаг что вопросы уже загружены из БД (чтобы не загружать дважды)
     }
 
     // Для совместимости с фреймворком
@@ -42,7 +46,7 @@ class MultiplayerMode {
     }
 
     startAsGuest(inviteData) {
-        console.log('🚀 Запуск как гость:', inviteData);
+        console.log('🚀 Запуск как гость (ОБЫЧНЫЙ режим):', inviteData);
         this.isHost = false;
         this.maxQuestions = inviteData.max_questions || 10;
         
@@ -61,6 +65,23 @@ class MultiplayerMode {
                     console.log('✅ Сессия найдена:', session.id);
                     this.gameSessionId = session.id;
                     window.currentMultiplayerSessionId = session.id;
+                    
+                    // Загружаем полные данные вопросов из сессии (если они уже были сохранены)
+                    if (session.shared_questions) {
+                        try {
+                            const questionsData = typeof session.shared_questions === 'string' 
+                                ? JSON.parse(session.shared_questions) 
+                                : session.shared_questions;
+                            this.sharedQuestions = questionsData;
+                            console.log('📥 ГОСТЬ: Загруженные вопросы при старте:', this.sharedQuestions.length, 'штук');
+                        } catch (e) {
+                            console.error('❌ Ошибка парсинга общих вопросов:', e);
+                            this.sharedQuestions = [];
+                        }
+                    } else {
+                        console.log('📋 ГОСТЬ: Вопросы еще не сгенерированы, инициализирую пустой массив');
+                        this.sharedQuestions = [];
+                    }
                     
                     // Обновляем статус на guest_joined
                     this.updateGameSession(session.id, { status: 'guest_joined' });
@@ -110,6 +131,32 @@ class MultiplayerMode {
                     console.log('   - host_ready:', newHostReady, '(было:', lastHostReady, ')');
                     console.log('   - guest_ready:', newGuestReady, '(было:', lastGuestReady, ')');
                     console.log('   - isHost:', self.isHost);
+                    console.log('   - shared_questions in payload:', !!payload.new.shared_questions);
+                    
+                    // ГОСТЬ: Синхронизируем вопросы от хоста в реал-тайме
+                    if (!self.isHost && payload.new.shared_questions && !self.questionsLoadedFromDB) {
+                        try {
+                            const questionsData = typeof payload.new.shared_questions === 'string'
+                                ? JSON.parse(payload.new.shared_questions)
+                                : payload.new.shared_questions;
+                            
+                            // Проверяем что вопросы загружены полностью (количество совпадает)
+                            if (questionsData && questionsData.length > 0) {
+                                self.sharedQuestions = questionsData;
+                                self.questionsLoadedFromDB = true; // Отмечаем что вопросы загружены
+                                console.log('🔄 ГОСТЬ: Получены вопросы от хоста в real-time:');
+                                console.log('   - Всего вопросов:', self.sharedQuestions.length);
+                                console.log('   - Установлен флаг questionsLoadedFromDB = true');
+                                if (self.sharedQuestions.length > 0) {
+                                    console.log('   - Первый вопрос:', self.sharedQuestions[0].correctAnimeTitle);
+                                    console.log('   - Последний вопрос:', self.sharedQuestions[self.sharedQuestions.length - 1].correctAnimeTitle);
+                                }
+                            }
+                        } catch (e) {
+                            console.error('❌ Ошибка парсинга общих вопросов:', e);
+                            console.error('   - Пришли данные:', payload.new.shared_questions);
+                        }
+                    }
                     
                     // Если гость присоединился, показываем хосту экран готовности
                     if (newStatus === 'guest_joined' && self.isHost) {
@@ -118,8 +165,54 @@ class MultiplayerMode {
                     
                     // Если игра началась
                     if (newStatus === 'in_progress') {
-                        if (!window.gameState || window.gameState.gameMode !== 'multiplayer') {
-                            self.startGame('easy');
+                        console.log('📢 Статус: in_progress (игра началась)');
+                        
+                        // ГОСТЬ: Синхронизируемся с хостом
+                        if (!self.isHost && !self.gameStarted) {
+                            console.log('👤 ГОСТЬ: Игра началась, проверяю готовность вопросов');
+                            
+                            // Если вопросы уже пришли через real-time update
+                            if (self.sharedQuestions && self.sharedQuestions.length > 0) {
+                                console.log('✅ ГОСТЬ: Вопросы уже загружены через real-time, запускаю игру');
+                                self.gameStarted = true;
+                                self.startGame('easy');
+                                // Небольшая задержка для синхронизации с хостом
+                                setTimeout(() => {
+                                    console.log('🎬 ГОСТЬ: Запускаю первый вопрос (real-time)');
+                                    self.nextQuestion();
+                                }, 100);
+                            } else {
+                                // Если вопросы еще не пришли - загружаем из БД
+                                console.log('⏳ ГОСТЬ: Вопросы еще не пришли, загружаю из БД...');
+                                const loadQuestionsForGuest = async (attempt = 1) => {
+                                    try {
+                                        await self.loadSharedQuestionsFromDB();
+                                        console.log('✅ ГОСТЬ: Вопросы загружены из БД (попытка', attempt, ')');
+                                        console.log('   - Всего вопросов:', self.sharedQuestions?.length);
+                                        
+                                        if (!self.gameStarted) {
+                                            self.gameStarted = true;
+                                            self.startGame('easy');
+                                            // Задержка чтобы синхронизироваться с хостом
+                                            setTimeout(() => {
+                                                console.log('🎬 ГОСТЬ: Запускаю первый вопрос (из БД)');
+                                                self.nextQuestion();
+                                            }, 100);
+                                        }
+                                    } catch (error) {
+                                        console.error('❌ ГОСТЬ: Ошибка загрузки вопросов (попытка', attempt, '):', error);
+                                        if (attempt < 5) {
+                                            console.log('👂 ГОСТЬ: Повторяю попытку через 300мс...');
+                                            setTimeout(() => loadQuestionsForGuest(attempt + 1), 300);
+                                        } else {
+                                            alert('Ошибка загрузки вопросов после 5 попыток!');
+                                            self.endGame();
+                                        }
+                                    }
+                                };
+                                
+                                loadQuestionsForGuest();
+                            }
                         }
                     }
                     // Если игра завершена
@@ -160,31 +253,9 @@ class MultiplayerMode {
         
         console.log('✅ Слушатель сессии настроен');
     }    setupGameStartListener(sessionId) {
-        console.log('👂 Настройка слушателя старта игры');
-        
-        const client = window.authManager?.supabase;
-        if (!client) return;
-
-        const channel = client
-            .channel(`game-start:${sessionId}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'multiplayer_sessions',
-                    filter: `id=eq.${sessionId}`
-                },
-                payload => {
-                    if (payload.new.status === 'in_progress') {
-                        console.log('🎮 Начало игры');
-                        this.startGame('easy');
-                    }
-                }
-            )
-            .subscribe();
-
-        console.log('✅ Слушатель старта настроен');
+        console.log('👂 Настройка слушателя старта игры (Normal режим не использует)');
+        // В Normal режиме startGame вызывается из checkIfBothReady после обратного отчета
+        // Эта функция оставлена для совместимости, но не используется
     }
 
     setupHostSessionCheckFallback(sessionId) {
@@ -233,9 +304,23 @@ class MultiplayerMode {
             try {
                 const session = await this.getGameSession(sessionId);
                 if (session && session.status === 'in_progress') {
-                    console.log('✅ Игра началась (fallback)');
+                    console.log('✅ Игра началась (fallback для гостя)');
                     clearInterval(interval);
-                    this.startGame('easy');
+                    
+                    // Гость загружает вопросы и запускает игру (но только если не запущена еще)
+                    if (!this.isHost && !this.gameStarted) {
+                        try {
+                            await this.loadSharedQuestionsFromDB();
+                            console.log('✅ Вопросы загружены (fallback)');
+                            this.gameStarted = true;
+                            this.startGame('easy');
+                            this.nextQuestion();
+                        } catch (error) {
+                            console.error('❌ Ошибка в fallback:', error);
+                            alert('Ошибка загрузки игры!');
+                            this.endGame();
+                        }
+                    }
                 }
             } catch (error) {
                 console.error('❌ Ошибка проверки:', error);
@@ -355,6 +440,53 @@ class MultiplayerMode {
         }
     }
 
+    async loadSharedQuestionsFromDB() {
+        console.log('🔄 Загрузка общих вопросов из БД');
+        
+        // Если вопросы уже загружены, не загружаем повторно
+        if (this.questionsLoadedFromDB && this.sharedQuestions.length > 0) {
+            console.log('✅ Вопросы уже загружены ранее, пропускаю повторную загрузку');
+            return;
+        }
+        
+        try {
+            const client = window.authManager?.supabase;
+            if (!client) throw new Error('Supabase not initialized');
+            if (!this.gameSessionId) throw new Error('Game session ID not set');
+            
+            const { data, error } = await client
+                .from('multiplayer_sessions')
+                .select('shared_questions')
+                .eq('id', this.gameSessionId)
+                .single();
+
+            if (error) throw error;
+            
+            if (data && data.shared_questions) {
+                try {
+                    const questionsData = typeof data.shared_questions === 'string'
+                        ? JSON.parse(data.shared_questions)
+                        : data.shared_questions;
+                    this.sharedQuestions = questionsData;
+                    this.questionsLoadedFromDB = true; // Отмечаем что вопросы загружены
+                    console.log('✅ ГОСТЬ: Загружено из БД:', questionsData.length, 'вопросов');
+                    console.log('   - Первый вопрос:', questionsData[0]?.correctAnimeTitle);
+                    console.log('   - Последний вопрос:', questionsData[questionsData.length - 1]?.correctAnimeTitle);
+                    console.log('   - this.sharedQuestions после загрузки:', this.sharedQuestions.length);
+                } catch (e) {
+                    console.error('❌ Ошибка парсинга:', e);
+                    throw e;
+                }
+            } else {
+                console.warn('⚠️ shared_questions пусто в БД');
+                this.sharedQuestions = [];
+            }
+        } catch (error) {
+            console.error('❌ Ошибка загрузки вопросов из БД:', error);
+            throw error;
+        }
+    }
+
     showWaitingScreen() {
         console.log('⏳ Показ экрана ожидания для хоста');
         
@@ -414,7 +546,7 @@ class MultiplayerMode {
     }
 
     showReadyToStartScreen() {
-        console.log('🎯 Показ экрана готовности к старту для хоста');
+        console.log('🎯 Показ экрана готовности к старту для хоста (ОБЫЧНЫЙ режим)');
         
         const existingScreen = document.getElementById('multiplayer-ready-to-start-screen');
         if (existingScreen) {
@@ -428,10 +560,10 @@ class MultiplayerMode {
                         <div style="font-size: 60px; margin-bottom: 20px;">🎯</div>
                         <h2>Противник присоединился</h2>
                         <p style="color: #c4b5fd; margin: 20px 0;">Готовы начать игру?</p>
-                        <p style="color: #a78bfa; margin: 10px 0; font-size: 16px;">📊 Игра на ${this.maxQuestions} вопросов</p>
+                        <p style="color: #a78bfa; margin: 10px 0; font-size: 16px;">📊 Игра на ${this.maxQuestions} вопросов (ОДИНАКОВЫЕ вопросы)</p>
                         
                         <div style="display: flex; gap: 20px; justify-content: center; margin-top: 30px; flex-wrap: wrap;">
-                            <button class="btn start-btn" onclick="startMultiplayerGameNow()" 
+                            <button class="btn start-btn" onclick="startMultiplayerNormalGameNow()" 
                                     style="font-size: 18px; padding: 20px 40px;">
                                 ▶️ Начать игру
                             </button>
@@ -452,6 +584,9 @@ class MultiplayerMode {
     startGame(difficulty = 'easy') {
         console.log('🚀 Запуск мультиплеера, сложность:', difficulty);
         console.log('📊 Всего вопросов:', this.maxQuestions);
+        
+        // Сбрасываем флаг загрузки вопросов для новой игры
+        this.questionsLoadedFromDB = false;
         
         window.gameState = {
             score: 0,
@@ -485,7 +620,77 @@ class MultiplayerMode {
         }
 
         this.showGameScreen();
-        this.loadQuestion();
+        // НЕ вызываем loadQuestion здесь! Она будет вызвана из nextQuestion() после генерации вопросов
+        console.log('✅ startGame завершен, ожидаем checkIfBothReady для генерации вопросов');
+    }
+
+    generateAllQuestions() {
+        console.log('🎲 Генерирую ВСЕ вопросы сразу для обоих игроков');
+        
+        if (!window.animeDatabase || window.animeDatabase.length === 0) {
+            console.error('❌ База аниме пуста!');
+            return false;
+        }
+
+        try {
+            this.sharedQuestions = [];
+            const usedAnimeIds = [];
+
+            for (let i = 0; i < this.maxQuestions; i++) {
+                console.log(`🔄 Генерирую вопрос ${i + 1}/${this.maxQuestions}`);
+                
+                // Выбираем правильный ответ (getRandomAnime при count=1 возвращает объект, не массив)
+                const correctAnimeResult = window.getRandomAnime(1, usedAnimeIds);
+                if (!correctAnimeResult) {
+                    console.error(`❌ Не удалось выбрать правильный ответ для вопроса ${i + 1}`);
+                    return false;
+                }
+                
+                // correctAnimeResult может быть объект или массив из одного элемента
+                const correctAnime = Array.isArray(correctAnimeResult) ? correctAnimeResult[0] : correctAnimeResult;
+                
+                if (!correctAnime || !correctAnime.id) {
+                    console.error(`❌ Неправильный формат аниме для вопроса ${i + 1}:`, correctAnime);
+                    return false;
+                }
+                
+                usedAnimeIds.push(correctAnime.id);
+
+                // Выбираем неправильные ответы
+                const wrongAnime = window.getRandomAnime(3, [...usedAnimeIds]);
+                if (!wrongAnime || wrongAnime.length < 3) {
+                    console.error(`❌ Недостаточно аниме для неправильных ответов в вопросе ${i + 1}`);
+                    console.log(`   - Нужно: 3, Получено: ${wrongAnime?.length || 0}`);
+                    return false;
+                }
+
+                // Создаем массив всех ответов
+                const allAnswers = [correctAnime, ...wrongAnime];
+                
+                // Перемешиваем ответы
+                if (window.shuffleArray) {
+                    window.shuffleArray(allAnswers);
+                }
+
+                // Сохраняем вопрос
+                const questionData = {
+                    correctId: correctAnime.id,
+                    wrongIds: wrongAnime.map(a => a.id),
+                    order: allAnswers.map(a => a.id),
+                    correctAnimeTitle: correctAnime.title,
+                    correctAnimeMusic: correctAnime.music
+                };
+
+                this.sharedQuestions.push(questionData);
+                console.log(`   ✅ Вопрос ${i + 1}: ${correctAnime.title} (порядок: ${questionData.order.join(', ')})`);
+            }
+
+            console.log('✅ ВСЕ вопросы сгенерированы! Всего:', this.sharedQuestions.length);
+            return true;
+        } catch (error) {
+            console.error('❌ Ошибка при генерации вопросов:', error);
+            return false;
+        }
     }
 
     showGameScreen() {
@@ -672,14 +877,22 @@ class MultiplayerMode {
     }
 
     loadQuestion() {
-        console.log('📝 Загрузка вопроса для мультиплеера');
+        console.log('📝 Загрузка вопроса - НАЧАЛО');
+        console.log('   - currentQuestion:', window.gameState?.currentQuestion);
+        console.log('   - maxQuestions:', window.gameState?.maxQuestions);
+        console.log('   - sharedQuestions длина:', this.sharedQuestions?.length);
         
         if (!window.gameState) {
             console.error('❌ gameState не определен');
             return;
         }
+        
+        if (!this.sharedQuestions || this.sharedQuestions.length === 0) {
+            console.error('❌ sharedQuestions пустой или не определен!');
+            console.error('   - this.sharedQuestions:', this.sharedQuestions);
+            return;
+        }
 
-        window.gameState.currentQuestion++;
         window.gameState.musicStarted = false;
         this.updateGameHeader();
 
@@ -690,33 +903,55 @@ class MultiplayerMode {
             return;
         }
 
-        if (window.gameState.usedAnimeIds.length >= window.animeDatabase.length) {
-            console.log('🔄 Все аниме использованы, сбрасываем список');
-            window.gameState.usedAnimeIds = [];
-        }
+        const currentQuestionNum = window.gameState.currentQuestion;
+        const questionIndex = currentQuestionNum - 1; // Индекс в массиве (0-based)
+        
+        console.log(`🔍 Ищу вопрос: номер ${currentQuestionNum}, индекс ${questionIndex}`);
+        console.log(`   - Всего вопросов в памяти: ${this.sharedQuestions.length}`);
 
-        const correctAnime = window.getRandomAnime ? window.getRandomAnime(1, window.gameState.usedAnimeIds) : null;
-        if (!correctAnime) {
-            console.error('❌ Не удалось получить правильное аниме');
-            alert('Ошибка загрузки аниме!');
+        // Получаем данные вопроса из готового списка
+        if (questionIndex < 0 || questionIndex >= this.sharedQuestions.length) {
+            console.error(`❌ Индекс вопроса ${questionIndex} выходит за границы массива!`);
+            console.error('   - currentQuestionNum:', currentQuestionNum);
+            console.error('   - sharedQuestions.length:', this.sharedQuestions.length);
+            console.error('   - sharedQuestions:', this.sharedQuestions);
             this.endGame();
             return;
         }
 
-        console.log('🎯 Правильное аниме:', correctAnime.title);
+        const questionData = this.sharedQuestions[questionIndex];
+        
+        if (!questionData) {
+            console.error(`❌ Вопрос с индексом ${questionIndex} равен null/undefined`);
+            this.endGame();
+            return;
+        }
+        
+        console.log(`✅ Вопрос ${currentQuestionNum}: ${questionData.correctAnimeTitle}`);
+        console.log('   - correctId:', questionData.correctId);
+        console.log('   - wrongIds:', questionData.wrongIds);
+        console.log('   - order (порядок ответов):', questionData.order);
+        console.log('   - correctAnimeMusic:', questionData.correctAnimeMusic);
 
-        window.gameState.usedAnimeIds.push(correctAnime.id);
+        // ОБА ИГРОКА: Используют одинаковые данные вопроса
+        const allAnswerIds = questionData.order;
+        const allAnswers = allAnswerIds.map(id => window.animeDatabase.find(a => a.id === id));
+        const correctAnime = window.animeDatabase.find(a => a.id === questionData.correctId);
 
-        const wrongAnime = window.getRandomAnime ? window.getRandomAnime(3, [...window.gameState.usedAnimeIds, correctAnime.id]) : [];
-        console.log('❌ Неправильные варианты:', wrongAnime.map(a => a.title));
+        if (!correctAnime) {
+            console.error(`❌ Аниме с id ${questionData.correctId} не найдено в БД`);
+            this.endGame();
+            return;
+        }
 
-        const allAnswers = [correctAnime, ...wrongAnime];
-        if (window.shuffleArray) window.shuffleArray(allAnswers);
+        console.log('   ✅ Порядок ответов для обоих:', allAnswerIds);
 
         this.updateAnswersUI(allAnswers, correctAnime);
         
-        window.gameState.currentMusic = correctAnime.music;
+        window.gameState.currentMusic = questionData.correctAnimeMusic;
         window.gameState.currentCorrectAnime = correctAnime;
+        
+        console.log('   - Установлена музыка:', window.gameState.currentMusic);
 
         document.getElementById('answers-container').style.opacity = '0';
         document.getElementById('answers-container').style.display = 'none';
@@ -726,7 +961,7 @@ class MultiplayerMode {
         document.querySelector('.music-controls').style.display = 'block';
 
         this.animateQuestionTransition();
-        console.log('✅ Вопрос загружен, ожидание старта музыки');
+        console.log(`✅ Вопрос ${currentQuestionNum} загружен с одинаковыми ответами для обоих`);
     }
 
     animateQuestionTransition() {
@@ -742,10 +977,12 @@ class MultiplayerMode {
     updateGameHeader() {
         const timerElement = document.getElementById('timer');
         const questionElement = document.getElementById('question-number');
+        const maxQuestionsElement = document.getElementById('max-questions');
         const scoreElement = document.getElementById('score');
         
         if (timerElement) timerElement.textContent = window.gameState.timeLeft;
         if (questionElement) questionElement.textContent = window.gameState.currentQuestion;
+        if (maxQuestionsElement) maxQuestionsElement.textContent = window.gameState.maxQuestions;
         if (scoreElement) scoreElement.textContent = window.gameState.score;
 
         if (timerElement && window.gameState.timeLeft <= 5) {
@@ -788,9 +1025,15 @@ class MultiplayerMode {
 
     startMusicForQuestion() {
         console.log('🎵 Запуск музыки для вопроса');
+        console.log('   - gameState:', !!window.gameState);
+        console.log('   - currentMusic:', window.gameState?.currentMusic);
+        console.log('   - currentCorrectAnime:', window.gameState?.currentCorrectAnime);
         
         if (!window.gameState || !window.gameState.currentMusic) {
             console.error('❌ Музыка не загружена');
+            console.error('   - currentQuestion:', window.gameState?.currentQuestion);
+            console.error('   - sharedQuestions длина:', window.currentGameMode?.sharedQuestions?.length);
+            alert('❌ Вопрос еще не загружен. Подождите...');
             return;
         }
 
@@ -1052,16 +1295,28 @@ class MultiplayerMode {
     }
 
     nextQuestion() {
-        console.log('⏭️ Переход к следующему вопросу');
-        console.log(`📊 Текущий вопрос: ${window.gameState.currentQuestion}, Максимум: ${window.gameState.maxQuestions}`);
+        console.log('⏭️ nextQuestion() вызвана');
+        console.log(`   - isHost: ${this.isHost}`);
+        console.log(`   - currentQuestion ПЕРЕД: ${window.gameState.currentQuestion}`);
+        console.log(`   - maxQuestions: ${window.gameState.maxQuestions}`);
+        
+        // Увеличиваем счётчик вопроса
+        window.gameState.currentQuestion++;
+        const currentQuestionNum = window.gameState.currentQuestion;
+        
+        console.log(`📊 Переход на вопрос ${currentQuestionNum} из ${window.gameState.maxQuestions}`);
 
         // Проверяем, достигли ли мы лимита вопросов
-        if (window.gameState.currentQuestion >= window.gameState.maxQuestions) {
+        if (currentQuestionNum > window.gameState.maxQuestions) {
             console.log('✅ Достигнут лимит вопросов! Заканчиваем игру.');
             this.endGame();
             return;
         }
 
+        // СРАЗУ обновляем заголовок с новым номером вопроса
+        this.updateGameHeader();
+
+        // Очищаем контейнер результатов
         const resultContainer = document.getElementById('result-stats');
         if (resultContainer) {
             resultContainer.classList.add('hidden');
@@ -1070,8 +1325,10 @@ class MultiplayerMode {
         
         document.querySelector('.music-controls').style.display = 'block';
         
+        console.log(`⏭️ Вызываю loadQuestion() для вопроса ${currentQuestionNum}`);
         // Загружаем вопрос
         this.loadQuestion();
+        console.log('⏭️ loadQuestion() завершена');
         
         // Сбрасываем флаги готовности для следующего раунда
         if (this.gameSessionId) {
@@ -1122,6 +1379,11 @@ class MultiplayerMode {
         // Вызывается из слушателя когда получаем обновление от противника
         if (this.hostReady && this.guestReady) {
             console.log('✅ Оба игрока готовы! Обратный отчет 3, 2, 1');
+            
+            // КРИТИЧНО: Сбрасываем флаг загрузки вопросов для нового раунда
+            console.log('🔄 СБРОС флага questionsLoadedFromDB для нового раунда');
+            this.questionsLoadedFromDB = false;
+            this.sharedQuestions = []; // Очищаем старые вопросы
             
             // Показываем сообщение об ожидании
             const waitMessage = document.querySelector('[data-waiting-message]');
@@ -1180,8 +1442,65 @@ class MultiplayerMode {
                     if (countdownContainer.parentElement) {
                         countdownContainer.remove();
                     }
-                    console.log('⏱️ Обратный отчет завершен, вызываю nextQuestion()');
-                    this.nextQuestion();
+                    console.log('⏱️ Обратный отчет завершен');
+                    
+                    // ГЕНЕРИРУЕМ ВСЕ ВОПРОСЫ СРАЗУ (только хост)
+                    if (this.isHost) {
+                        console.log('🎲 ХОСТ: Генерирую ВСЕ вопросы сразу');
+                        const success = this.generateAllQuestions();
+                        if (success) {
+                            console.log('💾 ХОСТ: Сохраняю все вопросы в БД');
+                            const questionsJSON = JSON.stringify(this.sharedQuestions);
+                            console.log(`   Размер данных: ${questionsJSON.length} символов`);
+                            
+                            this.updateGameSession(this.gameSessionId, { 
+                                shared_questions: questionsJSON,
+                                status: 'in_progress'
+                            })
+                            .then(() => {
+                                console.log('✅ ХОСТ: Все вопросы сохранены в БД');
+                                // ТОЛЬКО ПОТОМ вызываем startGame
+                                this.startGame('easy');
+                                this.nextQuestion();
+                            })
+                            .catch(error => {
+                                console.error('❌ Ошибка сохранения вопросов:', error);
+                                console.error('   Пытаюсь продолжить без сохранения');
+                                this.startGame('easy');
+                                this.nextQuestion();
+                            });
+                        } else {
+                            console.error('❌ Ошибка генерации вопросов');
+                            alert('Ошибка генерации вопросов!');
+                            this.endGame();
+                        }
+                    } else {
+                        // ГОСТЬ: Ждет когда хост сохранит вопросы в БД
+                        console.log('👤 ГОСТЬ: Ожидаю вопросы от хоста');
+                        
+                        const loadQuestionsForGuest = (attempt = 1) => {
+                            this.loadSharedQuestionsFromDB()
+                                .then(() => {
+                                    console.log('✅ ГОСТЬ: Вопросы загружены из БД (попытка', attempt + ')');
+                                    // ГОСТЬ также вызывает startGame
+                                    this.startGame('easy');
+                                    this.nextQuestion();
+                                })
+                                .catch(error => {
+                                    console.error('❌ ГОСТЬ: Ошибка загрузки вопросов (попытка', attempt + '):', error);
+                                    if (attempt < 5) {
+                                        // Повторяем попытку
+                                        console.log('👂 ГОСТЬ: Повторяю попытку через 300мс...');
+                                        setTimeout(() => loadQuestionsForGuest(attempt + 1), 300);
+                                    } else {
+                                        alert('Ошибка загрузки вопросов после 5 попыток!');
+                                        this.endGame();
+                                    }
+                                });
+                        };
+                        
+                        loadQuestionsForGuest();
+                    }
                 }
             }, 1000);
         } else {
@@ -1344,26 +1663,63 @@ class MultiplayerMode {
 window.MultiplayerMode = MultiplayerMode;
 
 // Глобальная функция для запуска игры хостом
-function startMultiplayerGameNow() {
-    console.log('🎮 Запуск мультиплеера хостом');
+function startMultiplayerNormalGameNow() {
+    console.log('🎮 Запуск мультиплеера (ОБЫЧНЫЙ режим) хостом');
     if (window.currentGameMode && typeof window.currentGameMode.startGame === 'function') {
         // Закрываем экран готовности
         const readyScreen = document.getElementById('multiplayer-ready-to-start-screen');
         if (readyScreen) readyScreen.remove();
         
+        // Генерируем все вопросы ДО запуска игры
+        console.log('🎲 Генерирую ВСЕ вопросы сразу (ПЕРЕД startGame)');
+        const success = window.currentGameMode.generateAllQuestions();
+        if (!success) {
+            console.error('❌ Ошибка генерации вопросов');
+            alert('Ошибка генерации вопросов!');
+            return;
+        }
+        
+        console.log('✅ Вопросы сгенерированы на ХОСТЕ:');
+        console.log('   - Всего вопросов:', window.currentGameMode.sharedQuestions.length);
+        if (window.currentGameMode.sharedQuestions.length > 0) {
+            console.log('   - Первый вопрос:', window.currentGameMode.sharedQuestions[0]);
+            console.log('   - Второй вопрос:', window.currentGameMode.sharedQuestions[1]);
+        }
+        
+        console.log('💾 Сохраняю все вопросы в БД');
+        const questionsJSON = JSON.stringify(window.currentGameMode.sharedQuestions);
+        console.log(`   Размер данных: ${questionsJSON.length} символов`);
+        
         // Обновляем статус сессии на in_progress
         if (window.currentGameMode.gameSessionId) {
-            window.currentGameMode.updateGameSession(window.currentGameMode.gameSessionId, { status: 'in_progress' })
+            window.currentGameMode.updateGameSession(window.currentGameMode.gameSessionId, { 
+                shared_questions: questionsJSON,
+                status: 'in_progress'
+            })
                 .then(() => {
-                    console.log('✅ Статус обновлен на in_progress');
+                    console.log('✅ Статус обновлен на in_progress, вопросы сохранены');
+                    console.log('⏳ ХОСТ: Жду 500мс чтобы гость загрузил вопросы...');
+                    window.currentGameMode.gameStarted = true; // Устанавливаем флаг
                     window.currentGameMode.startGame('easy');
+                    
+                    // Даем гостю 500мс чтобы загрузить вопросы из БД
+                    setTimeout(() => {
+                        console.log('🎬 ХОСТ: Запускаю первый вопрос (задержка 500мс)');
+                        window.currentGameMode.nextQuestion();
+                    }, 500);
                 })
                 .catch(error => {
                     console.error('❌ Ошибка обновления статуса:', error);
+                    window.currentGameMode.gameStarted = true;
                     window.currentGameMode.startGame('easy');
+                    setTimeout(() => {
+                        window.currentGameMode.nextQuestion();
+                    }, 500);
                 });
         } else {
+            window.currentGameMode.gameStarted = true;
             window.currentGameMode.startGame('easy');
+            window.currentGameMode.nextQuestion();
         }
     }
 }
@@ -1382,10 +1738,12 @@ function returnToMenu() {
     showScreen('main-screen');
 }
 
+console.log('✅ MultiplayerNormalMode.js loaded (обычный режим с одинаковыми вопросами)');
+
 // Глобальная функция для кнопки "Готов"
 if (!window.markPlayerReady) {
     window.markPlayerReady = function() {
-        console.log('🔵 markPlayerReady вызвана из multiplayerMode');
+        console.log('🔵 markPlayerReady вызвана из multiplayerNormalMode');
         if (window.currentGameMode && typeof window.currentGameMode.markPlayerReady === 'function') {
             window.currentGameMode.markPlayerReady();
         } else {

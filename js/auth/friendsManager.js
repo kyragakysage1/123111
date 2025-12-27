@@ -873,7 +873,7 @@ class FriendsManager {
     }
 
     // Принять приглашение на игру
-    async acceptMultiplayerInvite(inviteId) {
+    async acceptMultiplayerInvite(inviteId, gameMode = 'different') {
         try {
             const client = window.authManager?.supabase;
             if (!client) return false;
@@ -903,12 +903,55 @@ class FriendsManager {
             }
 
             console.log('✅ Приглашение принято');
+            console.log('🎮 Режим мультиплеера из параметра:', gameMode);
+            
+            window.currentMultiplayerMode = gameMode;
+            console.log('🔧 Установлен режим для гостя:', window.currentMultiplayerMode);
 
             // Небольшая задержка чтобы гость успел присоединиться
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            // Создаём и запускаем игровую сессию
-            const multiplayerMode = new MultiplayerMode();
+            // Создаём и запускаем игровую сессию в зависимости от режима
+            let multiplayerMode;
+            
+            if (window.currentMultiplayerMode === 'normal') {
+                console.log('🎮 Запуск ОБЫЧНОГО режима для гостя');
+                
+                // Ждем загрузки класса MultiplayerNormalMode с retry
+                let attempts = 0;
+                while (typeof MultiplayerNormalMode === 'undefined' && attempts < 10) {
+                    console.log('⏳ Ожидание загрузки MultiplayerNormalMode... попытка', attempts + 1);
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    attempts++;
+                }
+                
+                if (typeof MultiplayerNormalMode === 'undefined') {
+                    console.error('❌ Класс MultiplayerNormalMode не определен!');
+                    alert('❌ Ошибка: игровой режим не загружен. Пожалуйста, обновите страницу.');
+                    return false;
+                }
+                
+                multiplayerMode = new MultiplayerNormalMode();
+            } else {
+                console.log('🎮 Запуск РАЗНОГО режима для гостя');
+                
+                // Ждем загрузки класса MultiplayerMode с retry
+                let attempts = 0;
+                while (typeof MultiplayerMode === 'undefined' && attempts < 10) {
+                    console.log('⏳ Ожидание загрузки MultiplayerMode... попытка', attempts + 1);
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    attempts++;
+                }
+                
+                if (typeof MultiplayerMode === 'undefined') {
+                    console.error('❌ Класс MultiplayerMode не определен!');
+                    alert('❌ Ошибка: игровой режим не загружен. Пожалуйста, обновите страницу.');
+                    return false;
+                }
+                
+                multiplayerMode = new MultiplayerMode();
+            }
+            
             window.currentGameMode = multiplayerMode;
             
             await multiplayerMode.startAsGuest(invite);
@@ -1039,7 +1082,7 @@ class FriendsManager {
                 <p style="margin: 5px 0 0 0; color: #c4b5fd; font-size: 14px;">Приглашает на ${invite.max_questions} вопросов</p>
             </div>
             <div style="display: flex; gap: 10px;">
-                <button onclick="window.friendsManager.acceptMultiplayerInvite('${invite.id}'); this.parentElement.parentElement.remove();" 
+                <button onclick="window.friendsManager.acceptMultiplayerInvite('${invite.id}', 'normal'); this.parentElement.parentElement.remove();" 
                         style="flex: 1; padding: 8px 12px; background: #22c55e; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: bold;">
                     Принять
                 </button>
